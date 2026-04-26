@@ -12,8 +12,8 @@ RUN mkdir -p /app/data/uploads /app/data/outputs
 ENV NODE_ENV=production
 ENV DATA_DIR=/app/data
 ENV HOST=0.0.0.0
-ENV PORT=8001
+ENV PORT=8000
 
-EXPOSE 8001
+EXPOSE 8000
 
 CMD ["node", "src/index.js"]

@@ -2,41 +2,19 @@
 
 A portable **PDF processor + Ollama proxy** server that runs on **any DGX system** (DGX Spark, DGX Station, DGX H100, …) as well as regular Linux, macOS, and Windows machines.
 
-Two fully equivalent runtime implementations are provided — choose whichever fits your stack:
-
-| Runtime | Entry-point | Default port |
-|---|---|---|
-| **Python 3.10+ / FastAPI** | `scripts/run.sh` | 8000 |
-| **Node.js 18+ / Express** | `scripts/run_node.sh` | 8000 |
-
-Both runtimes expose the **same REST API** and share the same `data/` directory.
+The server is implemented in **Node.js 18+ / Express** and listens on port **8000** by default.
 
 ---
 
-## Quick start (Python)
-
-```bash
-# 1. Install dependencies (creates dgx/.venv)
-bash scripts/install.sh
-
-# 2. Copy and edit the example environment file
-cp .env.example .env
-# edit .env — set DGX_API_TOKEN to something secret
-
-# 3. Start the server
-bash scripts/run.sh
-# → http://0.0.0.0:8000
-# → Swagger UI: http://localhost:8000/docs
-```
-
-## Quick start (Node.js)
+## Quick start
 
 ```bash
 # 1. Install dependencies
 bash scripts/install_node.sh
 
-# 2. Copy and edit the environment file (skip if already done above)
+# 2. Copy and edit the example environment file
 cp .env.example .env
+# edit .env — set DGX_API_TOKEN to something secret
 
 # 3. Start the server
 bash scripts/run_node.sh
@@ -46,7 +24,7 @@ bash scripts/run_node.sh
 ## Docker quick start
 
 ```bash
-# Both Python (port 8000) + Node.js (port 8001) servers
+# Node.js server (port 8000)
 bash scripts/run_docker.sh
 
 # Include Ollama (requires NVIDIA Container Toolkit)
@@ -88,13 +66,13 @@ Send `POST /pdf/jobs` with body:
 | `merge` | `job_ids: ["id1", "id2"]` | Merge two or more uploaded PDFs |
 | `rotate` | `pages: {"0": 90, "2": 180}` | Rotate pages by 90/180/270° |
 | `extract_text` | _(none)_ | Save all text to a `.txt` result file |
-| `compress` | _(none)_ | Re-compress; uses Ghostscript if available, otherwise fitz/pdf-lib |
+| `compress` | _(none)_ | Re-compress; uses Ghostscript if available, otherwise pdf-lib |
 
 ---
 
 ## Firewall
 
-The built-in application-level firewall applies to **both** Python and Node.js runtimes. Configure it in `.env`:
+The built-in application-level firewall is configured in `.env`:
 
 ```dotenv
 FIREWALL_ENABLED=true
@@ -150,16 +128,12 @@ The setup steps are identical to any Linux machine:
 
 ```bash
 git clone <this-repo> && cd playserver/dgx
-bash scripts/install.sh          # Python path
-# or
-bash scripts/install_node.sh     # Node.js path
+bash scripts/install_node.sh
 
 cp .env.example .env
 # Set DGX_API_TOKEN, OLLAMA_BASE_URL, etc.
 
-bash scripts/run.sh              # Python
-# or
-bash scripts/run_node.sh         # Node.js
+bash scripts/run_node.sh
 ```
 
 For GPU-accelerated Ollama via Docker:
@@ -178,23 +152,6 @@ dgx/
 ├── README.md
 ├── docker-compose.yml
 ├── .env.example
-├── requirements.txt          ← Python deps
-├── server/                   ← Python / FastAPI implementation
-│   ├── Dockerfile
-│   ├── main.py
-│   ├── config.py
-│   ├── auth.py
-│   ├── middleware/
-│   │   └── firewall.py       ← IP allowlist/blocklist + rate limiter
-│   ├── routers/
-│   │   ├── pdf.py
-│   │   ├── ollama.py
-│   │   └── system.py
-│   ├── services/
-│   │   ├── job_store.py
-│   │   └── pdf_service.py
-│   └── utils/
-│       └── gpu.py
 ├── server-node/              ← Node.js / Express implementation
 │   ├── Dockerfile
 │   ├── package.json
@@ -215,8 +172,6 @@ dgx/
 │           ├── gpu.js
 │           └── netUtils.js
 ├── scripts/
-│   ├── install.sh            ← Python venv setup
-│   ├── run.sh                ← Start Python server
 │   ├── install_node.sh       ← npm install
 │   ├── run_node.sh           ← Start Node.js server
 │   ├── run_docker.sh         ← docker compose up
@@ -224,3 +179,4 @@ dgx/
 └── data/
     └── .gitkeep
 ```
+

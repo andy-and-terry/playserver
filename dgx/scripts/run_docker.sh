@@ -19,8 +19,7 @@ fi
 cd "$DGX_DIR"
 
 echo "Starting DGX Server Tools via Docker Compose..."
-echo "  Python server  → http://localhost:8000"
-echo "  Node.js server → http://localhost:8001"
+echo "  Node.js server → http://localhost:8000"
 echo ""
 echo "To also start Ollama (requires NVIDIA Container Toolkit):"
 echo "  docker compose --profile ollama up --build"
