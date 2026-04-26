@@ -179,3 +179,34 @@ async function compressPdf(jobId, inputPath, outDir) {
 
 module.exports = { runJob };
 
+// ── TTL cleanup ───────────────────────────────────────────────────────────────
+
+const _JOB_MAX_AGE_MS = 24 * 60 * 60 * 1000; // 24 h
+const _CLEANUP_INTERVAL_MS = 60 * 60 * 1000;   // 1 h
+
+function _cleanupOldJobs() {
+  const cutoff = Date.now() - _JOB_MAX_AGE_MS;
+  for (const job of jobStore.listAll()) {
+    if (job.createdAt < cutoff) {
+      // Delete upload file
+      try {
+        const uploadFile = safePath(uploadsDir(), `${job.jobId}.pdf`);
+        if (fs.existsSync(uploadFile)) fs.unlinkSync(uploadFile);
+      } catch { /* ignore */ }
+
+      // Delete result file
+      if (job.resultFile) {
+        try {
+          if (fs.existsSync(job.resultFile)) fs.unlinkSync(job.resultFile);
+        } catch { /* ignore */ }
+      }
+
+      jobStore.delete(job.jobId);
+    }
+  }
+}
+
+setInterval(() => {
+  try { _cleanupOldJobs(); } catch { /* ignore */ }
+}, _CLEANUP_INTERVAL_MS).unref();
+

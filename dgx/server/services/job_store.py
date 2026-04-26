@@ -40,6 +40,11 @@ class JobStore:
         with self._lock:
             return self._store.pop(job_id, None) is not None
 
+    def list_all(self) -> list["Job"]:
+        """Return a snapshot of all jobs (used for TTL cleanup)."""
+        with self._lock:
+            return list(self._store.values())
+
 
 # Module-level singleton
 job_store = JobStore()

@@ -35,6 +35,11 @@ class JobStore {
   delete(jobId) {
     return this._store.delete(jobId);
   }
+
+  /** Return a snapshot of all jobs (used for TTL cleanup). */
+  listAll() {
+    return Array.from(this._store.values());
+  }
 }
 
 const jobStore = new JobStore();

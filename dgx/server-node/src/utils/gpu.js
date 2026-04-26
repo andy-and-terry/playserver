@@ -5,12 +5,13 @@
 
 'use strict';
 
-const { execSync } = require('child_process');
+const { execFileSync } = require('child_process');
 
 function getGpuInfo() {
   try {
-    const output = execSync(
-      'nvidia-smi --query-gpu=name,memory.total,memory.used,utilization.gpu --format=csv,noheader,nounits',
+    const output = execFileSync(
+      'nvidia-smi',
+      ['--query-gpu=name,memory.total,memory.used,utilization.gpu', '--format=csv,noheader,nounits'],
       { timeout: 10_000, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }
     ).trim();
 

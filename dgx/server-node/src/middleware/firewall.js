@@ -10,8 +10,27 @@
 const config = require('../config');
 const { isInCIDR } = require('../utils/netUtils');
 
+// Parse network lists once at module load so every request avoids repeated
+// string splitting.
+const _blockedNetworks = _parseNetworks(config.BLOCKED_IPS);
+const _allowedNetworks = _parseNetworks(config.ALLOWED_IPS);
+
 // Map<ip, number[]>  — timestamps (ms) of recent requests
 const _rateLimitStore = new Map();
+
+// Evict stale per-IP entries every minute to prevent unbounded memory growth.
+setInterval(() => {
+  const now = Date.now();
+  const window = 60_000;
+  for (const [ip, timestamps] of _rateLimitStore.entries()) {
+    const fresh = timestamps.filter((t) => now - t < window);
+    if (fresh.length === 0) {
+      _rateLimitStore.delete(ip);
+    } else {
+      _rateLimitStore.set(ip, fresh);
+    }
+  }
+}, 60_000).unref();
 
 function _parseNetworks(str) {
   if (!str) return [];
@@ -38,19 +57,13 @@ function firewall(req, res, next) {
   const clientIp = _cleanIp(raw);
 
   // 1. Blocklist
-  if (config.BLOCKED_IPS) {
-    const blocked = _parseNetworks(config.BLOCKED_IPS);
-    if (_ipInNetworks(clientIp, blocked)) {
-      return res.status(403).json({ detail: 'Forbidden' });
-    }
+  if (_blockedNetworks.length && _ipInNetworks(clientIp, _blockedNetworks)) {
+    return res.status(403).json({ detail: 'Forbidden' });
   }
 
   // 2. Allowlist (empty = allow everyone)
-  if (config.ALLOWED_IPS) {
-    const allowed = _parseNetworks(config.ALLOWED_IPS);
-    if (!_ipInNetworks(clientIp, allowed)) {
-      return res.status(403).json({ detail: 'Forbidden' });
-    }
+  if (_allowedNetworks.length && !_ipInNetworks(clientIp, _allowedNetworks)) {
+    return res.status(403).json({ detail: 'Forbidden' });
   }
 
   // 3. Rate limiting
