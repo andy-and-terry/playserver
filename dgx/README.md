@@ -2,18 +2,11 @@
 
 A portable **PDF processor + Ollama proxy** server that runs on **any DGX system** (DGX Spark, DGX Station, DGX H100, …) as well as regular Linux, macOS, and Windows machines.
 
-Two fully equivalent runtime implementations are provided — choose whichever fits your stack:
-
-| Runtime | Entry-point | Default port |
-|---|---|---|
-| **Python 3.10+ / FastAPI** | `scripts/run.sh` | 8000 |
-| **Node.js 18+ / Express** | `scripts/run_node.sh` | 8000 |
-
-Both runtimes expose the **same REST API** and share the same `data/` directory.
+Built on **Python 3.10+ / FastAPI**, exposing a REST API on port 8000.
 
 ---
 
-## Quick start (Python)
+## Quick start
 
 ```bash
 # 1. Install dependencies (creates dgx/.venv)
@@ -29,29 +22,15 @@ bash scripts/run.sh
 # → Swagger UI: http://localhost:8000/docs
 ```
 
-## Quick start (Node.js)
-
-```bash
-# 1. Install dependencies
-bash scripts/install_node.sh
-
-# 2. Copy and edit the environment file (skip if already done above)
-cp .env.example .env
-
-# 3. Start the server
-bash scripts/run_node.sh
-# → http://0.0.0.0:8000
-```
-
 ## Docker quick start
 
 ```bash
-# Both Python (port 8000) + Node.js (port 8001) servers
+# Starts the API server (port 8000) + Ollama (port 11434)
 bash scripts/run_docker.sh
-
-# Include Ollama (requires NVIDIA Container Toolkit)
-docker compose --profile ollama up --build
 ```
+
+> **GPU note:** Ollama uses GPU passthrough via the NVIDIA Container Toolkit.  
+> If no NVIDIA GPU is present, remove the `deploy` block from `docker-compose.yml`.
 
 ---
 
@@ -94,7 +73,7 @@ Send `POST /pdf/jobs` with body:
 
 ## Firewall
 
-The built-in application-level firewall applies to **both** Python and Node.js runtimes. Configure it in `.env`:
+The built-in application-level firewall is configured in `.env`:
 
 ```dotenv
 FIREWALL_ENABLED=true
@@ -118,9 +97,13 @@ sudo bash scripts/setup_ufw.sh 8000 192.168.1.0/24
 
 ---
 
-## Enabling Ollama
+## Ollama
 
-1. [Install Ollama](https://ollama.com) on the DGX (or the same machine).
+Ollama starts automatically alongside the API server when using Docker (`bash scripts/run_docker.sh`).
+
+For a bare-metal setup:
+
+1. [Install Ollama](https://ollama.com) on the same machine.
 2. Set in `.env`:
    ```dotenv
    OLLAMA_BASE_URL=http://127.0.0.1:11434
@@ -146,27 +129,21 @@ No configuration is needed. Nothing breaks when GPUs are absent.
 
 ## Running on DGX
 
-The setup steps are identical to any Linux machine:
-
 ```bash
 git clone <this-repo> && cd playserver/dgx
-bash scripts/install.sh          # Python path
-# or
-bash scripts/install_node.sh     # Node.js path
 
 cp .env.example .env
 # Set DGX_API_TOKEN, OLLAMA_BASE_URL, etc.
 
-bash scripts/run.sh              # Python
-# or
-bash scripts/run_node.sh         # Node.js
+bash scripts/install.sh
+bash scripts/run.sh
 ```
 
-For GPU-accelerated Ollama via Docker:
+For Docker (API server + Ollama with GPU):
 
 ```bash
 # Requires NVIDIA Container Toolkit
-docker compose --profile ollama up --build
+bash scripts/run_docker.sh
 ```
 
 ---
@@ -195,31 +172,10 @@ dgx/
 │   │   └── pdf_service.py
 │   └── utils/
 │       └── gpu.py
-├── server-node/              ← Node.js / Express implementation
-│   ├── Dockerfile
-│   ├── package.json
-│   └── src/
-│       ├── index.js
-│       ├── config.js
-│       ├── auth.js
-│       ├── middleware/
-│       │   └── firewall.js   ← IP allowlist/blocklist + rate limiter
-│       ├── routers/
-│       │   ├── pdf.js
-│       │   ├── ollama.js
-│       │   └── system.js
-│       ├── services/
-│       │   ├── jobStore.js
-│       │   └── pdfService.js
-│       └── utils/
-│           ├── gpu.js
-│           └── netUtils.js
 ├── scripts/
 │   ├── install.sh            ← Python venv setup
-│   ├── run.sh                ← Start Python server
-│   ├── install_node.sh       ← npm install
-│   ├── run_node.sh           ← Start Node.js server
-│   ├── run_docker.sh         ← docker compose up
+│   ├── run.sh                ← Start server (bare-metal)
+│   ├── run_docker.sh         ← Start all services via Docker Compose
 │   └── setup_ufw.sh          ← OS-level UFW firewall helper
 └── data/
     └── .gitkeep

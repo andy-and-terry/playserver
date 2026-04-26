@@ -19,32 +19,13 @@ services:
     networks:
       - dgx-net
 
-  # ── Node.js / Express server (port 8001) ─────────────────────────────────
-  dgx-server-node:
-    build:
-      context: .
-      dockerfile: server-node/Dockerfile
-    image: dgx-server-tools-node:latest
-    container_name: dgx-server-node
-    restart: unless-stopped
-    env_file: .env
-    environment:
-      PORT: "8001"
-    ports:
-      - "8001:8001"
-    volumes:
-      - ./data:/app/data
-    networks:
-      - dgx-net
-
-  # ── Ollama (optional — enable with: docker compose --profile ollama up) ──
+  # ── Ollama ────────────────────────────────────────────────────────────────
   #
   # Requires NVIDIA Container Toolkit:
   #   https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/
   #
   # If no GPU is available, remove or comment out the entire `deploy` block.
   ollama:
-    profiles: ["ollama"]
     image: ollama/ollama:latest
     container_name: ollama
     restart: unless-stopped
