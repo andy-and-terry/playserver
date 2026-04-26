@@ -6,8 +6,11 @@ Fallback:        pypdf — used for merge/split/rotate if fitz is absent.
 Ghostscript:     used for compress if available on PATH; falls back to fitz.
 """
 
+import re
 import shutil
 import subprocess
+import threading
+import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
@@ -16,8 +19,10 @@ from .job_store import job_store
 
 executor = ThreadPoolExecutor(max_workers=4)
 
-
 # ── path helpers ─────────────────────────────────────────────────────────────
+
+_UUID_RE = re.compile(r'^[0-9a-f-]+$', re.IGNORECASE)
+
 
 def _data_dir() -> Path:
     return Path(get_settings().DATA_DIR)
@@ -33,11 +38,6 @@ def outputs_dir() -> Path:
     d = _data_dir() / "outputs"
     d.mkdir(parents=True, exist_ok=True)
     return d
-
-
-import re
-
-_UUID_RE = re.compile(r'^[0-9a-f-]+$', re.IGNORECASE)
 
 
 def safe_path(base: Path, filename: str) -> Path:
@@ -64,6 +64,47 @@ def safe_output_path(out: Path, job_id: str, suffix: str) -> Path:
 
 
 # ── job runner ───────────────────────────────────────────────────────────────
+
+_JOB_MAX_AGE = 24 * 3600   # seconds — jobs older than this are auto-deleted
+_CLEANUP_INTERVAL = 3600   # run cleanup once per hour
+
+
+def _cleanup_old_jobs() -> None:
+    """Delete jobs (and their associated files) that exceed the max age."""
+    cutoff = time.time() - _JOB_MAX_AGE
+    for job in job_store.list_all():
+        if job.created_at < cutoff:
+            try:
+                upload = uploads_dir() / f"{job.job_id}.pdf"
+                if upload.exists():
+                    upload.unlink()
+            except Exception:  # noqa: BLE001
+                pass
+            if job.result_file:
+                try:
+                    p = Path(job.result_file)
+                    if p.exists():
+                        p.unlink()
+                except Exception:  # noqa: BLE001
+                    pass
+            job_store.delete(job.job_id)
+
+
+def _start_cleanup_thread() -> None:
+    def _loop() -> None:
+        while True:
+            time.sleep(_CLEANUP_INTERVAL)
+            try:
+                _cleanup_old_jobs()
+            except Exception:  # noqa: BLE001
+                pass
+
+    t = threading.Thread(target=_loop, daemon=True, name="job-cleanup")
+    t.start()
+
+
+_start_cleanup_thread()
+
 
 def run_job(job_id: str, operation: str, params: dict) -> None:
     job_store.update(job_id, status="running")

@@ -23,6 +23,30 @@ class FirewallMiddleware(BaseHTTPMiddleware):
         self.settings = settings
         self._rate_data: dict[str, list[float]] = defaultdict(list)
         self._lock = threading.Lock()
+        # Pre-parse network lists once at startup so every request avoids
+        # repeated string splitting and ipaddress object construction.
+        self._blocked_networks = self._parse_networks(settings.BLOCKED_IPS)
+        self._allowed_networks = self._parse_networks(settings.ALLOWED_IPS)
+        # Background thread to evict stale per-IP rate-limit entries.
+        if settings.RATE_LIMIT_PER_MINUTE > 0:
+            self._start_rate_cleanup_thread()
+
+    def _start_rate_cleanup_thread(self) -> None:
+        def _loop() -> None:
+            while True:
+                time.sleep(60)
+                now = time.monotonic()
+                window = 60.0
+                with self._lock:
+                    for ip in list(self._rate_data.keys()):
+                        fresh = [t for t in self._rate_data[ip] if now - t < window]
+                        if fresh:
+                            self._rate_data[ip] = fresh
+                        else:
+                            del self._rate_data[ip]
+
+        t = threading.Thread(target=_loop, daemon=True, name="firewall-rate-cleanup")
+        t.start()
 
     # ── helpers ──────────────────────────────────────────────────────────────
 
@@ -56,15 +80,13 @@ class FirewallMiddleware(BaseHTTPMiddleware):
         client_ip = request.client.host if request.client else "unknown"
 
         # 1. Blocklist check
-        if self.settings.BLOCKED_IPS:
-            blocked = self._parse_networks(self.settings.BLOCKED_IPS)
-            if self._ip_in_networks(client_ip, blocked):
+        if self._blocked_networks:
+            if self._ip_in_networks(client_ip, self._blocked_networks):
                 return JSONResponse({"detail": "Forbidden"}, status_code=403)
 
         # 2. Allowlist check (empty string = allow everyone)
-        if self.settings.ALLOWED_IPS:
-            allowed = self._parse_networks(self.settings.ALLOWED_IPS)
-            if not self._ip_in_networks(client_ip, allowed):
+        if self._allowed_networks:
+            if not self._ip_in_networks(client_ip, self._allowed_networks):
                 return JSONResponse({"detail": "Forbidden"}, status_code=403)
 
         # 3. Rate limiting (sliding-window per IP)
