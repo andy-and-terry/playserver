@@ -7,6 +7,7 @@ const multer = require('multer');
 const { v4: uuidv4 } = require('uuid');
 
 const { requireAuth } = require('../auth');
+const { firewall } = require('../middleware/firewall');
 const config = require('../config');
 const { jobStore } = require('../services/jobStore');
 const { runJob } = require('../services/pdfService');
@@ -45,7 +46,7 @@ const upload = multer({
 
 // ── routes ────────────────────────────────────────────────────────────────────
 
-router.post('/pdf/upload', requireAuth, upload.single('file'), (req, res) => {
+router.post('/pdf/upload', firewall, requireAuth, upload.single('file'), (req, res) => {
   if (!req.file) {
     return res.status(400).json({ detail: 'No file uploaded' });
   }
@@ -95,7 +96,7 @@ router.get('/pdf/jobs/:jobId', requireAuth, (req, res) => {
   });
 });
 
-router.get('/pdf/download/:jobId', requireAuth, (req, res) => {
+router.get('/pdf/download/:jobId', firewall, requireAuth, (req, res) => {
   const job = jobStore.get(req.params.jobId);
   if (!job) return res.status(404).json({ detail: 'Job not found' });
   if (job.status !== 'done') {
@@ -111,7 +112,7 @@ router.get('/pdf/download/:jobId', requireAuth, (req, res) => {
   res.download(job.resultFile);
 });
 
-router.delete('/pdf/jobs/:jobId', requireAuth, (req, res) => {
+router.delete('/pdf/jobs/:jobId', firewall, requireAuth, (req, res) => {
   const jobId = req.params.jobId;
   const job = jobStore.get(jobId);
   if (!job) return res.status(404).json({ detail: 'Job not found' });

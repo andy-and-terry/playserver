@@ -27,6 +27,11 @@ function _cleanIp(raw) {
 }
 
 function firewall(req, res, next) {
+  // Idempotency guard: if this middleware already ran for this request
+  // (e.g. applied both globally and on a specific route), skip the second pass.
+  if (req._firewallChecked) return next();
+  req._firewallChecked = true;
+
   if (!config.FIREWALL_ENABLED) return next();
 
   const raw = req.ip || (req.connection && req.connection.remoteAddress) || 'unknown';
