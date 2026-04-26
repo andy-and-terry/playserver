@@ -1,9 +1,9 @@
 import platform
 import sys
+from datetime import datetime, timezone
 
 import psutil
 from fastapi import APIRouter, Depends
-from datetime import datetime, timezone
 
 from ..auth import require_auth
 from ..utils.gpu import get_gpu_info

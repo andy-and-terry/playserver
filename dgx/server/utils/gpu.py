@@ -37,12 +37,19 @@ def get_gpu_info() -> dict[str, Any]:
             parts = [p.strip() for p in line.split(",")]
             if len(parts) < 4:
                 continue
+
+            def _to_int(val: str):
+                try:
+                    return int(val)
+                except ValueError:
+                    return val
+
             gpus.append(
                 {
                     "name": parts[0],
-                    "memory_total_mb": int(parts[1]) if parts[1].isdigit() else parts[1],
-                    "memory_used_mb": int(parts[2]) if parts[2].isdigit() else parts[2],
-                    "utilization_pct": int(parts[3]) if parts[3].isdigit() else parts[3],
+                    "memory_total_mb": _to_int(parts[1]),
+                    "memory_used_mb": _to_int(parts[2]),
+                    "utilization_pct": _to_int(parts[3]),
                 }
             )
         return {"gpus": gpus, "nvidia_available": True}

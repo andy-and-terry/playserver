@@ -116,14 +116,24 @@ router.delete('/pdf/jobs/:jobId', requireAuth, (req, res) => {
   const job = jobStore.get(jobId);
   if (!job) return res.status(404).json({ detail: 'Job not found' });
 
-  // Clean up upload
-  const uploadFile = path.join(uploadsDir(), `${jobId}.pdf`);
-  if (fs.existsSync(uploadFile)) {
-    try { fs.unlinkSync(uploadFile); } catch { /* ignore */ }
-  }
-  // Clean up result
-  if (job.resultFile && fs.existsSync(job.resultFile)) {
-    try { fs.unlinkSync(job.resultFile); } catch { /* ignore */ }
+  // Clean up upload — use safePath to reject path traversal
+  try {
+    const uploadFile = safePath(uploadsDir(), `${jobId}.pdf`);
+    if (fs.existsSync(uploadFile)) {
+      try { fs.unlinkSync(uploadFile); } catch { /* ignore */ }
+    }
+  } catch { /* safePath rejected the path — nothing to delete */ }
+
+  // Clean up result — resultFile was written by the service (trusted), but
+  // verify it still lives inside outputsDir before deleting
+  if (job.resultFile) {
+    try {
+      const outDir = path.resolve(config.DATA_DIR, 'outputs');
+      const resolved = path.resolve(job.resultFile);
+      if (resolved.startsWith(path.resolve(outDir) + path.sep) && fs.existsSync(resolved)) {
+        try { fs.unlinkSync(resolved); } catch { /* ignore */ }
+      }
+    } catch { /* ignore */ }
   }
 
   jobStore.delete(jobId);

@@ -20,11 +20,12 @@ function getGpuInfo() {
       .map((line) => {
         const parts = line.split(',').map((s) => s.trim());
         if (parts.length < 4) return null;
+        const toInt = (s) => { const n = parseInt(s, 10); return isNaN(n) ? null : n; };
         return {
           name: parts[0],
-          memory_total_mb: parseInt(parts[1], 10) || parts[1],
-          memory_used_mb: parseInt(parts[2], 10) || parts[2],
-          utilization_pct: parseInt(parts[3], 10) || parts[3],
+          memory_total_mb: toInt(parts[1]),
+          memory_used_mb: toInt(parts[2]),
+          utilization_pct: toInt(parts[3]),
         };
       })
       .filter(Boolean);

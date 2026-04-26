@@ -35,6 +35,11 @@ def outputs_dir() -> Path:
     return d
 
 
+import re
+
+_UUID_RE = re.compile(r'^[0-9a-f-]+$', re.IGNORECASE)
+
+
 def safe_path(base: Path, filename: str) -> Path:
     """Resolve *filename* relative to *base* and reject path-traversal attempts."""
     resolved = (base / filename).resolve()
@@ -45,6 +50,17 @@ def safe_path(base: Path, filename: str) -> Path:
     except ValueError:
         raise ValueError(f"Path traversal detected: {filename}")
     return resolved
+
+
+def safe_output_path(out: Path, job_id: str, suffix: str) -> Path:
+    """Build a validated output path for *job_id* inside *out*.
+
+    Validates that *job_id* only contains UUID-safe characters (hex + hyphens)
+    before constructing the path, to prevent path traversal via a malicious job_id.
+    """
+    if not _UUID_RE.match(job_id):
+        raise ValueError(f"Invalid job ID: {job_id!r}")
+    return safe_path(out, f"{job_id}_result.{suffix}")
 
 
 # ── job runner ───────────────────────────────────────────────────────────────
@@ -79,7 +95,7 @@ def _split(job_id: str, input_path: Path, params: dict, out: Path) -> Path:
     pages: list[int] = params.get("pages", [])
     if not pages:
         raise ValueError("split: 'pages' list is required")
-    out_path = out / f"{job_id}_result.pdf"
+    out_path = safe_output_path(out, job_id, "pdf")
     try:
         import fitz  # PyMuPDF
         doc = fitz.open(str(input_path))
@@ -87,7 +103,8 @@ def _split(job_id: str, input_path: Path, params: dict, out: Path) -> Path:
         for p in pages:
             new_doc.insert_pdf(doc, from_page=p, to_page=p)
         new_doc.save(str(out_path), deflate=True, garbage=4)
-        new_doc.close(); doc.close()
+        new_doc.close()
+        doc.close()
     except ImportError:
         from pypdf import PdfReader, PdfWriter
         reader = PdfReader(str(input_path))
@@ -103,7 +120,7 @@ def _merge(job_id: str, _input: Path, params: dict, out: Path) -> Path:
     job_ids: list[str] = params.get("job_ids", [])
     if len(job_ids) < 2:
         raise ValueError("merge: 'job_ids' must contain at least 2 IDs")
-    out_path = out / f"{job_id}_result.pdf"
+    out_path = safe_output_path(out, job_id, "pdf")
     try:
         import fitz
         merged = fitz.open()
@@ -130,7 +147,7 @@ def _merge(job_id: str, _input: Path, params: dict, out: Path) -> Path:
 def _rotate(job_id: str, input_path: Path, params: dict, out: Path) -> Path:
     # params["pages"]: {"0": 90, "2": 180}
     page_rotations: dict[str, int] = params.get("pages", {})
-    out_path = out / f"{job_id}_result.pdf"
+    out_path = safe_output_path(out, job_id, "pdf")
     try:
         import fitz
         doc = fitz.open(str(input_path))
@@ -152,7 +169,7 @@ def _rotate(job_id: str, input_path: Path, params: dict, out: Path) -> Path:
 
 
 def _extract_text(job_id: str, input_path: Path, _params: dict, out: Path) -> Path:
-    out_path = out / f"{job_id}_result.txt"
+    out_path = safe_output_path(out, job_id, "txt")
     try:
         import fitz
         doc = fitz.open(str(input_path))
@@ -167,7 +184,7 @@ def _extract_text(job_id: str, input_path: Path, _params: dict, out: Path) -> Pa
 
 
 def _compress(job_id: str, input_path: Path, _params: dict, out: Path) -> Path:
-    out_path = out / f"{job_id}_result.pdf"
+    out_path = safe_output_path(out, job_id, "pdf")
 
     # Try Ghostscript first (best compression)
     gs = shutil.which("gs") or shutil.which("gswin64c") or shutil.which("gswin32c")

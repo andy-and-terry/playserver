@@ -1,16 +1,8 @@
-/**
- * pdfService.js — PDF operations powered by pdf-lib (pure JS).
- *
- * Operations: split, merge, rotate, extract_text, compress
- * Text extraction uses pdf-parse (pdfjs-based).
- * Compression falls back from Ghostscript → pdf-lib re-save.
- */
-
 'use strict';
 
 const fs = require('fs');
 const path = require('path');
-const { execSync } = require('child_process');
+const { execFileSync } = require('child_process');
 const { PDFDocument, degrees } = require('pdf-lib');
 const pdfParse = require('pdf-parse');
 
@@ -33,6 +25,7 @@ function outputsDir() {
 
 /**
  * Resolve filename relative to base and reject path-traversal attempts.
+ * Returns the resolved absolute path string.
  */
 function safePath(base, filename) {
   const resolved = path.resolve(base, filename);
@@ -41,6 +34,18 @@ function safePath(base, filename) {
     throw new Error(`Path traversal detected: ${filename}`);
   }
   return resolved;
+}
+
+/**
+ * Build and validate an output path under outputsDir().
+ * jobId is validated to only contain safe UUID characters.
+ */
+function safeOutputPath(outDir, jobId, suffix) {
+  // UUIDs are hex + hyphens only; reject anything else
+  if (!/^[0-9a-f-]+$/i.test(jobId)) {
+    throw new Error(`Invalid job ID: ${jobId}`);
+  }
+  return safePath(outDir, `${jobId}_result.${suffix}`);
 }
 
 // ── job runner ───────────────────────────────────────────────────────────────
@@ -84,7 +89,7 @@ async function splitPdf(jobId, inputPath, params, outDir) {
   copied.forEach((p) => outDoc.addPage(p));
 
   const outBytes = await outDoc.save();
-  const outPath = path.join(outDir, `${jobId}_result.pdf`);
+  const outPath = safeOutputPath(outDir, jobId, 'pdf');
   fs.writeFileSync(outPath, outBytes);
   return outPath;
 }
@@ -103,7 +108,7 @@ async function mergePdf(jobId, params, outDir) {
   }
 
   const outBytes = await outDoc.save();
-  const outPath = path.join(outDir, `${jobId}_result.pdf`);
+  const outPath = safeOutputPath(outDir, jobId, 'pdf');
   fs.writeFileSync(outPath, outBytes);
   return outPath;
 }
@@ -123,7 +128,7 @@ async function rotatePdf(jobId, inputPath, params, outDir) {
   }
 
   const outBytes = await doc.save();
-  const outPath = path.join(outDir, `${jobId}_result.pdf`);
+  const outPath = safeOutputPath(outDir, jobId, 'pdf');
   fs.writeFileSync(outPath, outBytes);
   return outPath;
 }
@@ -131,23 +136,33 @@ async function rotatePdf(jobId, inputPath, params, outDir) {
 async function extractText(jobId, inputPath, outDir) {
   const buf = fs.readFileSync(inputPath);
   const data = await pdfParse(buf);
-  const outPath = path.join(outDir, `${jobId}_result.txt`);
+  const outPath = safeOutputPath(outDir, jobId, 'txt');
   fs.writeFileSync(outPath, data.text, 'utf8');
   return outPath;
 }
 
 async function compressPdf(jobId, inputPath, outDir) {
-  const outPath = path.join(outDir, `${jobId}_result.pdf`);
+  const outPath = safeOutputPath(outDir, jobId, 'pdf');
 
-  // Try Ghostscript first
+  // Try Ghostscript first — use execFileSync with argument array to prevent
+  // command injection; never pass user-controlled data via shell string.
   const gsCandidates = ['gs', 'gswin64c', 'gswin32c'];
   for (const cmd of gsCandidates) {
     try {
-      execSync(`${cmd} --version`, { stdio: 'ignore', timeout: 5_000 });
-      // Found — run compression
-      execSync(
-        `"${cmd}" -sDEVICE=pdfwrite -dCompatibilityLevel=1.4 -dPDFSETTINGS=/ebook ` +
-        `-dNOPAUSE -dBATCH -dQUIET -sOutputFile="${outPath}" "${inputPath}"`,
+      execFileSync(cmd, ['--version'], { stdio: 'ignore', timeout: 5_000 });
+      // Found — run compression with safe arg array
+      execFileSync(
+        cmd,
+        [
+          '-sDEVICE=pdfwrite',
+          '-dCompatibilityLevel=1.4',
+          '-dPDFSETTINGS=/ebook',
+          '-dNOPAUSE',
+          '-dBATCH',
+          '-dQUIET',
+          `-sOutputFile=${outPath}`,
+          inputPath,
+        ],
         { timeout: 120_000 }
       );
       return outPath;
@@ -163,3 +178,4 @@ async function compressPdf(jobId, inputPath, outDir) {
 }
 
 module.exports = { runJob };
+
