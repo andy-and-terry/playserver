@@ -1,0 +1,165 @@
+/**
+ * pdfService.js — PDF operations powered by pdf-lib (pure JS).
+ *
+ * Operations: split, merge, rotate, extract_text, compress
+ * Text extraction uses pdf-parse (pdfjs-based).
+ * Compression falls back from Ghostscript → pdf-lib re-save.
+ */
+
+'use strict';
+
+const fs = require('fs');
+const path = require('path');
+const { execSync } = require('child_process');
+const { PDFDocument, degrees } = require('pdf-lib');
+const pdfParse = require('pdf-parse');
+
+const config = require('../config');
+const { jobStore } = require('./jobStore');
+
+// ── path helpers ─────────────────────────────────────────────────────────────
+
+function uploadsDir() {
+  const dir = path.resolve(config.DATA_DIR, 'uploads');
+  fs.mkdirSync(dir, { recursive: true });
+  return dir;
+}
+
+function outputsDir() {
+  const dir = path.resolve(config.DATA_DIR, 'outputs');
+  fs.mkdirSync(dir, { recursive: true });
+  return dir;
+}
+
+/**
+ * Resolve filename relative to base and reject path-traversal attempts.
+ */
+function safePath(base, filename) {
+  const resolved = path.resolve(base, filename);
+  const baseResolved = path.resolve(base);
+  if (!resolved.startsWith(baseResolved + path.sep) && resolved !== baseResolved) {
+    throw new Error(`Path traversal detected: ${filename}`);
+  }
+  return resolved;
+}
+
+// ── job runner ───────────────────────────────────────────────────────────────
+
+async function runJob(jobId, operation, params) {
+  jobStore.update(jobId, { status: 'running' });
+  try {
+    const resultFile = await executeOperation(jobId, operation, params);
+    jobStore.update(jobId, { status: 'done', resultFile });
+  } catch (err) {
+    jobStore.update(jobId, { status: 'error', error: err.message });
+  }
+}
+
+async function executeOperation(jobId, operation, params) {
+  const inputPath = safePath(uploadsDir(), `${jobId}.pdf`);
+  const outDir = outputsDir();
+
+  switch (operation) {
+    case 'split':        return splitPdf(jobId, inputPath, params, outDir);
+    case 'merge':        return mergePdf(jobId, params, outDir);
+    case 'rotate':       return rotatePdf(jobId, inputPath, params, outDir);
+    case 'extract_text': return extractText(jobId, inputPath, outDir);
+    case 'compress':     return compressPdf(jobId, inputPath, outDir);
+    default:
+      throw new Error(`Unknown operation: ${operation}. Valid: split, merge, rotate, extract_text, compress`);
+  }
+}
+
+// ── operations ───────────────────────────────────────────────────────────────
+
+async function splitPdf(jobId, inputPath, params, outDir) {
+  const pages = params.pages || [];
+  if (!pages.length) throw new Error("split: 'pages' list is required");
+
+  const srcBytes = fs.readFileSync(inputPath);
+  const srcDoc = await PDFDocument.load(srcBytes);
+  const outDoc = await PDFDocument.create();
+
+  const copied = await outDoc.copyPages(srcDoc, pages);
+  copied.forEach((p) => outDoc.addPage(p));
+
+  const outBytes = await outDoc.save();
+  const outPath = path.join(outDir, `${jobId}_result.pdf`);
+  fs.writeFileSync(outPath, outBytes);
+  return outPath;
+}
+
+async function mergePdf(jobId, params, outDir) {
+  const jobIds = params.job_ids || [];
+  if (jobIds.length < 2) throw new Error("merge: 'job_ids' must contain at least 2 IDs");
+
+  const outDoc = await PDFDocument.create();
+  for (const jid of jobIds) {
+    const srcPath = safePath(uploadsDir(), `${jid}.pdf`);
+    const srcBytes = fs.readFileSync(srcPath);
+    const srcDoc = await PDFDocument.load(srcBytes);
+    const copied = await outDoc.copyPages(srcDoc, srcDoc.getPageIndices());
+    copied.forEach((p) => outDoc.addPage(p));
+  }
+
+  const outBytes = await outDoc.save();
+  const outPath = path.join(outDir, `${jobId}_result.pdf`);
+  fs.writeFileSync(outPath, outBytes);
+  return outPath;
+}
+
+async function rotatePdf(jobId, inputPath, params, outDir) {
+  // params.pages: { "0": 90, "2": 180 }
+  const pageRotations = params.pages || {};
+
+  const srcBytes = fs.readFileSync(inputPath);
+  const doc = await PDFDocument.load(srcBytes);
+
+  for (const [idxStr, deg] of Object.entries(pageRotations)) {
+    const idx = parseInt(idxStr, 10);
+    const page = doc.getPage(idx);
+    const current = page.getRotation().angle;
+    page.setRotation(degrees((current + deg) % 360));
+  }
+
+  const outBytes = await doc.save();
+  const outPath = path.join(outDir, `${jobId}_result.pdf`);
+  fs.writeFileSync(outPath, outBytes);
+  return outPath;
+}
+
+async function extractText(jobId, inputPath, outDir) {
+  const buf = fs.readFileSync(inputPath);
+  const data = await pdfParse(buf);
+  const outPath = path.join(outDir, `${jobId}_result.txt`);
+  fs.writeFileSync(outPath, data.text, 'utf8');
+  return outPath;
+}
+
+async function compressPdf(jobId, inputPath, outDir) {
+  const outPath = path.join(outDir, `${jobId}_result.pdf`);
+
+  // Try Ghostscript first
+  const gsCandidates = ['gs', 'gswin64c', 'gswin32c'];
+  for (const cmd of gsCandidates) {
+    try {
+      execSync(`${cmd} --version`, { stdio: 'ignore', timeout: 5_000 });
+      // Found — run compression
+      execSync(
+        `"${cmd}" -sDEVICE=pdfwrite -dCompatibilityLevel=1.4 -dPDFSETTINGS=/ebook ` +
+        `-dNOPAUSE -dBATCH -dQUIET -sOutputFile="${outPath}" "${inputPath}"`,
+        { timeout: 120_000 }
+      );
+      return outPath;
+    } catch { /* not found or failed — try next */ }
+  }
+
+  // Fall back to pdf-lib re-save with object streams (modest size reduction)
+  const srcBytes = fs.readFileSync(inputPath);
+  const doc = await PDFDocument.load(srcBytes, { updateMetadata: false });
+  const outBytes = await doc.save({ useObjectStreams: true });
+  fs.writeFileSync(outPath, outBytes);
+  return outPath;
+}
+
+module.exports = { runJob };
