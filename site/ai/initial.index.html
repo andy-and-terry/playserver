@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Ollama API Integration</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      padding: 20px;
+      background-color: #f4f4f9;
+      color: #333;
+    }
+    h1 {
+      color: #4CAF50;
+    }
+    input, button {
+      padding: 10px;
+      margin: 10px 0;
+      width: 100%;
+      max-width: 500px;
+      display: block;
+    }
+    #response {
+      margin-top: 20px;
+      padding: 10px;
+      background-color: #e0f7fa;
+      border-radius: 5px;
+      max-width: 500px;
+    }
+  </style>
+</head>
+<body>
+  <h1>Ollama API Request</h1>
+  
+  <div>
+    <label for="prompt">Enter your prompt:</label>
+    <input type="text" id="prompt" placeholder="Why is the sky blue?" />
+    <button id="sendRequest">Generate Response</button>
+  </div>
+
+  <div id="response"></div>
+
+  <script>
+    // Replace with your actual API key
+    const apiKey = '835b8348c87444638baf662db77e55b6.pSSxhC4gjZrOfJVG4es0vCkV';
+    const apiUrl = 'https://ollama.com/api/generate';
+
+    // Send API request on button click
+    document.getElementById('sendRequest').addEventListener('click', async () => {
+      const prompt = document.getElementById('prompt').value.trim();
+
+      if (!prompt) {
+        alert("Please enter a prompt!");
+        return;
+      }
+
+      // Display loading message
+      document.getElementById('response').innerHTML = 'Generating response...';
+
+      try {
+        // Send API request
+        const response = await fetch(apiUrl, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${apiKey}`,  // Your API Key here
+          },
+          body: JSON.stringify({
+            model: 'deepseek-v4-pro:cloud',  // Replace with the desired model if needed
+            prompt: prompt,         // Use the inputted prompt
+            stream: true,          // Set to true if you want streaming
+          }),
+        });
+
+        const data = await response.json();
+
+        if (data && data.text) {
+          document.getElementById('response').innerHTML = `<b>Response:</b> ${data.text}`;
+        } else {
+          document.getElementById('response').innerHTML = 'No response from the model.';
+        }
+      } catch (error) {
+        console.error('Error:', error);
+        document.getElementById('response').innerHTML = `<b>Error:</b> ${error.message}`;
+      }
+    });
+  </script>
+</body>
+</html>
